@@ -1,2 +1,9 @@
 Windows:
 pyinstaller --onefile --noconsole --icon="image.ico" --name="ReadTransactions" main.py
+
+For linux:
+
+pyinstaller --onefile --name="ReadTransactions" main.py
+cd dist
+chmod +x ReadTransactions   # Make it executable
+./ReadTransactions          # Run it
