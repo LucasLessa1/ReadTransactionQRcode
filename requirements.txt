@@ -1,3 +1,4 @@
+altgraph==0.17.5
 anyio==4.12.1
 appdirs==1.4.4
 argcomplete==3.6.3
@@ -24,6 +25,7 @@ dbus_next==0.2.3
 distro==1.9.0
 dnf==4.24.0
 docopt==0.6.2
+embit==0.8.0
 fedora-third-party==0.10
 file-magic==0.4.0
 h11==0.16.0
@@ -64,9 +66,12 @@ pyenchant==3.2.2
 pygdbmi==0.11.0.0
 Pygments==2.19.1
 PyGObject==3.54.5
+pyinstaller==6.18.0
+pyinstaller-hooks-contrib==2026.0
 pykickstart @ file:///builddir/build/BUILD/pykickstart-3.66-build/pykickstart-3.66
 pyparsing==3.1.2
 pyparted==3.13.0
+pyperclip==1.11.0
 PyQt5==5.15.12.dev2507081429
 PyQt5_sip==12.17.1
 pyserial==3.5
