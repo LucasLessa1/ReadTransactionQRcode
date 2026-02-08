@@ -1,138 +1,112 @@
 import cv2
-from pyzbar import pyzbar
+import time
 import sys
 import binascii
-from ur.ur_encoder import UREncoder
+import pyperclip  # Library for clipboard
+from pyzbar.pyzbar import decode
 from ur.ur_decoder import URDecoder
-import embit
 from embit.psbt import PSBT
-
 
 def main():
     # Initialize Camera
     cap = cv2.VideoCapture(0)
     
-    # Initialize the Fountain Code Decoder
+    # Decoder Setup
     decoder = URDecoder()
     
-    # State flags
-    is_complete = False
-    result_text = "Scanning..."
-    result_color = (0, 255, 255) # Yellow initially
-
     print("\n" + "="*50)
-    print(" BITCOIN PSBT SCANNER LAUNCHED")
+    print(" BITCOIN PSBT SCANNER (Lightweight Mode)")
     print(" Show the animated QR to the camera.")
-    print(" Press 'r' to reset, 'q' to quit.")
+    print(" The TXID will be COPIED to clipboard automatically.")
+    print(" Press 'q' to quit manually.")
     print("="*50 + "\n")
 
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to grab frame")
-                break
+    scanning = True
+    found_txid = None
 
-            # Find QRs in the image
-            decoded_objects = pyzbar.decode(frame)
+    while scanning:
+        ret, frame = cap.read()
+        if not ret:
+            print("Failed to grab frame")
+            break
 
-            for obj in decoded_objects:
+        # Decode QR codes
+        decoded_objects = decode(frame)
+
+        for obj in decoded_objects:
+            (x, y, w, h) = obj.rect
+            
+            # Visual feedback (Green Box)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            
+            try:
                 qr_data = obj.data.decode('utf-8')
                 
-                # Check if it is a UR Crypto part
-                if "UR:CRYPTO-PSBT" in qr_data.upper():
+                # Check for UR Crypto
+                if "ur:" in qr_data.lower():
+                    decoder.receive_part(qr_data)
                     
-                    # Draw a box around the QR
-                    (x, y, w, h) = obj.rect
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                    # Calculate percentage
+                    progress = int(decoder.estimated_percent_complete() * 100)
+                    
+                    # Draw Progress Text on Video
+                    text = f"Scanning: {progress}%"
+                    cv2.putText(frame, text, (x, y - 10), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                    # Only process if we haven't finished yet
-                    if not is_complete:
-                        decoder.receive_part(qr_data)
+                    # --- SUCCESS LOGIC ---
+                    if decoder.is_complete():
+                        print("\n[+] Transfer Complete! Decoding...")
                         
-                        # Calculate progress
-                        progress = decoder.estimated_percent_complete() * 100
-                        
-                        # Show progress on screen
-                        cv2.putText(frame, f"Progress: {progress:.0f}%", (x, y - 10), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+                        decoded_ur = decoder.result
+                        raw_payload = decoded_ur.cbor
+                        psbt_magic = b'psbt\xff'
+                        start_index = raw_payload.find(psbt_magic)
 
-                        # --- SUCCESS TRIGGER ---
-                        if decoder.is_complete():
-                            is_complete = True
-                            print("\n[+] Transfer Complete! Decoding...")
+                        if start_index != -1:
+                            clean_psbt = raw_payload[start_index:]
+                            psbt = PSBT.parse(clean_psbt)
                             
-                            # 1. Get CBOR Payload
-                            decoded_ur = decoder.result
-                            raw_payload = decoded_ur.cbor
+                            # Extract TXID
+                            found_txid = binascii.hexlify(psbt.tx.txid()).decode()
                             
-                            # 2. THE MAGIC BYTE FIX
-                            # Find where 'psbt' + 0xff starts
-                            psbt_magic = b'psbt\xff'
-                            start_index = raw_payload.find(psbt_magic)
+                            # COPY TO CLIPBOARD
+                            pyperclip.copy(found_txid)
+                            
+                            print("="*40)
+                            print(" SUCCESS! TXID COPIED TO CLIPBOARD:")
+                            print(f" {found_txid}")
+                            print("="*40)
+                            
+                            # Draw FINAL Success Message on Screen
+                            cv2.rectangle(frame, (0, 0), (frame.shape[1], 100), (0, 0, 0), -1)
+                            cv2.putText(frame, "SUCCESS! COPIED!", (50, 60), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 3)
+                            
+                            # Show the success frame for 3 seconds then close
+                            cv2.imshow("Scanner", frame)
+                            cv2.waitKey(3000) 
+                            scanning = False
+                            break
+                        else:
+                            print("[-] Error: Magic Bytes not found.")
+            except Exception as e:
+                pass
 
-                            if start_index != -1:
-                                # Extract clean PSBT
-                                clean_psbt = raw_payload[start_index:]
-                                
-                                try:
-                                    # Parse and Hash
-                                    psbt = PSBT.parse(clean_psbt)
-                                    txid = binascii.hexlify(psbt.tx.txid()).decode()
-                                    
-                                    # Update UI Text
-                                    result_text = f"TXID: {txid}"
-                                    result_color = (0, 255, 0) # Green
-                                    
-                                    print("="*40)
-                                    print(" SUCCESS - TRANSACTION ID FOUND")
-                                    print(f" {txid}")
-                                    print("="*40)
-                                    
-                                except Exception as e:
-                                    print(f"[-] PSBT Parsing Error: {e}")
-                                    result_text = "Error: Invalid PSBT"
-                                    result_color = (0, 0, 255)
-                            else:
-                                print("[-] Error: Magic Bytes not found in payload.")
-                                result_text = "Error: Magic Bytes Missing"
-                                result_color = (0, 0, 255)
+        # Display Frame
+        if scanning:
+            cv2.imshow("Scanner", frame)
 
-            # Display the result on the screen if complete
-            if is_complete:
-                # Background black bar for text readability
-                cv2.rectangle(frame, (0, 0), (frame.shape[1], 80), (0, 0, 0), -1)
-                
-                # Print "SUCCESS"
-                cv2.putText(frame, "DECODE SUCCESS!", (20, 30), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                
-                # Print the TXID (small font)
-                cv2.putText(frame, result_text[:40] + "...", (20, 60), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, result_color, 2)
-                
-                # Instructions
-                cv2.putText(frame, "Press 'r' to reset", (20, 100), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 2)
+        # Quit Trigger
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-            # Show window
-            cv2.imshow("Bitcoin PSBT Scanner", frame)
-
-            # Controls
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
-            elif key == ord('r'):
-                # Reset everything to scan a new transaction
-                decoder = URDecoder()
-                is_complete = False
-                result_text = "Scanning..."
-                result_color = (0, 255, 255)
-                print("\n[+] Scanner Reset. Ready for next transaction.")
-
-    finally:
-        cap.release()
-        cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
+    
+    if found_txid:
+        # Keep terminal open to show result if run from CLI
+        input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
     main()

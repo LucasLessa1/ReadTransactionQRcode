@@ -1,0 +1,2 @@
+Windows:
+pyinstaller --onefile --noconsole --icon="image.ico" --name="ReadTransactions" main.py
