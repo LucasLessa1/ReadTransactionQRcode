@@ -1,6 +1,6 @@
 Windows:
-pyinstaller --onefile --noconsole --icon="image.ico" --name="ReadTransactions" main.py
-
+pyinstaller --onefile --noconsole --icon="image.ico" --name="PSBT_Scanner" main_win.py
+pyinstaller --noconsole --onefile --icon="image.ico" --collect-all pyzbar --name="PSBT_Scanner" main_win.py
 For linux:
 
 pyinstaller --onefile --name="ReadTransactions" main.py
